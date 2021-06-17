@@ -1,5 +1,7 @@
 doctrine:
     dbal:
+        mapping_types:
+            enum: string
         override_url: true
         url: '%env(resolve:DATABASE_URL)%'
 

@@ -30,13 +30,13 @@ class Form
     private $description;
 
     /**
-     * @ORM\OneToMany(targetEntity=Question::class, mappedBy="form", orphanRemoval=true)
+     * @ORM\OneToMany(targetEntity=Section::class, mappedBy="form", orphanRemoval=true)
      */
-    private $questions;
+    private $sections;
 
     public function __construct()
     {
-        $this->questions = new ArrayCollection();
+        $this->sections = new ArrayCollection();
     }
 
     public function getId(): ?int
@@ -69,26 +69,26 @@ class Form
     }
 
     /**
-     * @return Collection|Question[]
+     * @return Collection|Section[]
      */
-    public function getQuestions(): Collection
+    public function getSections(): Collection
     {
-        return $this->questions;
+        return $this->sections;
     }
 
-    public function addQuestion(Question $question): self
+    public function addQuestion(Section $question): self
     {
-        if (!$this->questions->contains($question)) {
-            $this->questions[] = $question;
+        if (!$this->sections->contains($question)) {
+            $this->sections[] = $question;
             $question->setForm($this);
         }
 
         return $this;
     }
 
-    public function removeQuestion(Question $question): self
+    public function removeQuestion(Section $question): self
     {
-        if ($this->questions->removeElement($question)) {
+        if ($this->sections->removeElement($question)) {
             // set the owning side to null (unless already changed)
             if ($question->getForm() === $this) {
                 $question->setForm(null);

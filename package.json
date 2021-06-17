@@ -18,8 +18,11 @@
     },
     "dependencies": {
         "@fortawesome/fontawesome-free": "^5.15.3",
+        "axios": "^0.21.1",
+        "openssl": "^1.1.0",
         "vue": "^2.6.12",
         "vue-loader": "^15.9.6",
-        "vue-template-compiler": "^2.6.12"
+        "vue-template-compiler": "^2.6.12",
+        "vuex": "^3.6.2"
     }
 }
