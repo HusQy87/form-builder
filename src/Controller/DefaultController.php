@@ -82,7 +82,7 @@ class DefaultController extends AbstractController
     }
 
     #[Route('/users', name: 'api_register', methods: ['POST'])]
-    public function register(Request $request, VerifyEmailHelperInterface $emailHelper, MailerInterface $mailer)
+    public function register(Request $request, VerifyEmailHelperInterface $emailHelper, \Swift_Mailer $mailer)
     {
 
         $response = new JsonResponse();
@@ -135,15 +135,13 @@ class DefaultController extends AbstractController
                 $em->flush();
 
                 $signatureComponents = $emailHelper->generateSignature('registration_confirmation_route', $userToAdd->getId(), $userToAdd->getEmail());
+                $message = (new \Swift_Message('Hello'))
+                    ->setFrom("tamerelapute@gmail.com")
+                    ->setBody(
+                        $this->renderView('mails/comfirmation_email.html.twig',['link' => $this->getParameter('app.front_address')]),'text/html'
+                    );
+                $mailer->send($message);
 
-                $email = new TemplatedEmail();
-                $email->to($userToAdd->getEmail());
-                $email->from("tamerelapute@gmail.com");
-                $email->htmlTemplate('mails/comfirmation_email.html.twig');
-                $email->context(['signedUrl' => $signatureComponents->getSignedUrl()]);
-                $mailer->send($email);
-
-                $this->getDoctrine()->getManager()->flush();
             }catch (UniqueConstraintViolationException $exception){
 
                 $response->setData(['code' => 401, 'messages' => ["Ce nom d'utilisateur ou cette email est déja utilisé"]]);
