@@ -12,6 +12,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Mailer\MailerInterface;
+use Symfony\Component\Mime\Email;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Security\Core\Encoder\UserPasswordEncoderInterface;
 
@@ -82,7 +83,7 @@ class DefaultController extends AbstractController
     }
 
     #[Route('/users', name: 'api_register', methods: ['POST'])]
-    public function register(Request $request, VerifyEmailHelperInterface $emailHelper, \Swift_Mailer $mailer)
+    public function register(Request $request, VerifyEmailHelperInterface $emailHelper, MailerInterface $mailer)
     {
 
         $response = new JsonResponse();
@@ -135,11 +136,12 @@ class DefaultController extends AbstractController
                 $em->flush();
 
                 $signatureComponents = $emailHelper->generateSignature('registration_confirmation_route', $userToAdd->getId(), $userToAdd->getEmail());
-                $message = (new \Swift_Message('Hello'))
-                    ->setFrom("tamerelapute@gmail.com")
-                    ->setBody(
-                        $this->renderView('mails/comfirmation_email.html.twig',['link' => $this->getParameter('app.front_address')]),'text/html'
-                    );
+                $message = (new TemplatedEmail())
+                    ->to($userToAdd->getEmail())
+                    ->sender("69wellcum69@gmail.com")
+                    ->htmlTemplate('mails/comfirmation_email.html.twig')
+                    ->context(['link' => $signatureComponents->getSignedUrl()]);
+
                 $mailer->send($message);
 
             }catch (UniqueConstraintViolationException $exception){
