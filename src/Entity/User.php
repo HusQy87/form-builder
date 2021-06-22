@@ -41,6 +41,11 @@ class User implements UserInterface
      */
     private $email;
 
+    /**
+     * @ORM\Column(type="boolean")
+     */
+    private bool $verified = false;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -125,6 +130,28 @@ class User implements UserInterface
     public function setEmail(string $email): self
     {
         $this->email = $email;
+
+        return $this;
+    }
+
+    public function getVerified(): ?bool
+    {
+        return $this->verified;
+    }
+    public function setVerified(bool $verified): ?self
+    {
+        $this->verified = $verified;
+
+        return $this;
+    }
+
+    /**
+     * @return $this
+     * set user to verified
+     */
+    public function Verify(): self
+    {
+        $this->verified = true;
 
         return $this;
     }

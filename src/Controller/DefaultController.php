@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Entity\Type;
 use App\Entity\User;
+use App\Entity\UserVerificationToken;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Psr\Log\LoggerInterface;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
@@ -12,17 +13,15 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Mailer\MailerInterface;
-use Symfony\Component\Mime\Email;
+use Symfony\Component\RateLimiter\RateLimiterFactory;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Security\Core\Encoder\UserPasswordEncoderInterface;
-
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\Encoder\XmlEncoder;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 use Symfony\Component\Serializer\Serializer;
 use Symfony\Component\Validator\Constraints as Assert;
 use Symfony\Component\Validator\Validation;
-use SymfonyCasts\Bundle\VerifyEmail\Exception\VerifyEmailExceptionInterface;
 use SymfonyCasts\Bundle\VerifyEmail\VerifyEmailHelperInterface;
 
 class DefaultController extends AbstractController
@@ -47,6 +46,13 @@ class DefaultController extends AbstractController
         return $this->render('default/index.html.twig', [
             'controller_name' => 'DefaultController',
         ]);
+    }
+
+    #[Route('/test', name: 'test')]
+    public function test(Request $request): Response
+    {
+        dd($request);
+        return (new JsonResponse())->setData(['hello' => 'hi']);
     }
 
     /* #[Route('/addForm', name: 'addForm')]
@@ -76,7 +82,7 @@ class DefaultController extends AbstractController
     {
         $this->logger->info('Login tried');
         $user = $this->getUser();
-        if ($user){
+        if ($user) {
             return $this->json(['username' => $user->getUsername(), 'roles' => $user->getRoles()]);
         }
 
@@ -85,7 +91,6 @@ class DefaultController extends AbstractController
     #[Route('/users', name: 'api_register', methods: ['POST'])]
     public function register(Request $request, VerifyEmailHelperInterface $emailHelper, MailerInterface $mailer)
     {
-
         $response = new JsonResponse();
         $this->logger->info('register new user tried');
         $user = [
@@ -117,66 +122,90 @@ class DefaultController extends AbstractController
 
         $readyToAdd = true;
         $messages = [];
-        foreach ($violations as $violation)
-        {
-            if ($violation->count()){
-                $readyToAdd =false;
+        foreach ($violations as $violation) {
+            if ($violation->count()) {
+                $readyToAdd = false;
                 $messages[] = $violation->get(0)->getMessage();
-                $this->logger->error("création de l'utilisateur {$user['username']} impossible", ['error' =>$violation->get(0)->getMessage() ] );
+                $this->logger->error("création de l'utilisateur {$user['username']} impossible", ['error' => $violation->get(0)->getMessage()]);
             }
         }
-        if ($readyToAdd){
+        if ($readyToAdd) {
             try {
                 $userToAdd = new User();
                 $userToAdd->setEmail($user['email'])
                     ->setUsername($user['username'])
                     ->setPassword($this->encoder->encodePassword($userToAdd, $user['password']));
-                $em =  $this->getDoctrine()->getManager();
-                $em->persist($userToAdd);
-                $em->flush();
+                $em = $this->getDoctrine()->getManager();
 
-                $signatureComponents = $emailHelper->generateSignature('registration_confirmation_route', $userToAdd->getId(), $userToAdd->getEmail());
+                $token = new UserVerificationToken();
+                $token->setUser($userToAdd);
+                $em->persist($token);
+                $em->flush();
                 $message = (new TemplatedEmail())
                     ->to($userToAdd->getEmail())
-                    ->sender("69wellcum69@gmail.com")
+                    ->sender("formbuilder@galcera.ovh")
+                    ->subject("Comfirmation de l'utilisateur")
                     ->htmlTemplate('mails/comfirmation_email.html.twig')
-                    ->context(['link' => $signatureComponents->getSignedUrl()]);
-
+                    ->context(['link' => $this->getParameter('app.front_address') . "/user/verification/{$token->getToken()}"]);
                 $mailer->send($message);
+                $response->setStatusCode(200)
+                    ->setData(['code' => 200, 'messages' => ['Un mail de confirmation vous a été envoyé']]);
+                return $response;
 
-            }catch (UniqueConstraintViolationException $exception){
+            } catch (UniqueConstraintViolationException $exception) {
 
                 $response->setData(['code' => 401, 'messages' => ["Ce nom d'utilisateur ou cette email est déja utilisé"]]);
                 $response->setStatusCode(401);
                 return $response;
             }
 
-        }else
-        {
+        } else {
             $response->setStatusCode(401)
-                ->setData(['code'=> 401, 'messages' => $messages]);
+                ->setData(['code' => 401, 'messages' => $messages]);
+            return $response;
         }
+
 
     }
 
-    #[Route('/verify', name: "registration_confirmation_route")]
-    public function verifyUserEmail(Request $request, VerifyEmailHelperInterface $emailHelper): Response
+
+    #[Route('/verify/{token}', name: "registration_confirmation_route", methods: ['GET'])]
+    public function verifyUserEmail(Request $request, string $token, RateLimiterFactory $rateLimitLimiter): JsonResponse
     {
-        $this->denyAccessUnlessGranted('IS_AUTHENTICATED_FULLY');
-        $user = $this->getUser();
+        $limiter = $rateLimitLimiter->create('localhost' . $request->getClientIp());
+        $em = $this->getDoctrine()->getManager();
+        $response = new JsonResponse();
+        $userToken = $this->getDoctrine()->getRepository(UserVerificationToken::class)->find($token);
+        if (false === $limiter->consume(1)->isAccepted()) {
+            $response->setStatusCode(401)
+                ->setData(['code' => 401, 'messages' => ["Trop de tentative  réessayer dans {$limiter->consume(1)->getRetryAfter()->format('H:i:s')} (heures/minutes/secondes)"]]);
+            return $response;
+        }
+        if (!is_null($userToken)) {
 
-        // Do not get the User's Id or Email Address from the Request object
-        try {
-            $emailHelper->validateEmailConfirmation($request->getUri(), $user->getId(), $user->getEmail());
-        } catch (VerifyEmailExceptionInterface $e) {
-            $this->addFlash('verify_email_error', $e->getReason());
+            if ($userToken->getExpiresAt()->diff((new \DateTime()))->invert === 1) {
+                $userToken->getUser()->Verify();
+                $response
+                    ->setStatusCode(200)
+                    ->setData(['code' => 200, 'messages' => ["l'utilisateur a bien été vérifié"]]);
 
-            return $this->redirectToRoute("api_login");
+            } else {
+                $em->remove($userToken);
+                $response->setStatusCode(401)
+                    ->setData(['code' => 401, 'messages' => ["Le token à expiré"]]);
+            }
+            $em->remove($userToken);
+        } else {
+            $response->setStatusCode(401)->setData(['code' => 401, 'messages' => ['Le token est invalide']]);
         }
 
-        // Mark your user as verified. e.g. switch a User::verified property to true
 
-        $this->addFlash('success', 'Your e-mail address has been verified.');
+        // Do not get the User's Id or Email Address from the Request object
+
+        // Mark your user as verified. e.g. switch a User::verified property to true
+        $em->flush();
+
+        return $response;
 
 
     }
